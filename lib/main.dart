@@ -4,7 +4,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'screens/detail_screen.dart';
 import 'screens/explore_screen.dart';
 import 'screens/splash_screen.dart';
-
+//prueba
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   final prefs = await SharedPreferences.getInstance();
