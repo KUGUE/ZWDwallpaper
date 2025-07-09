@@ -2,6 +2,7 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import '../widgets/dashboard_button.dart';
 import '../widgets/dashboard_panel.dart';
 import 'gallery_screen.dart';
@@ -131,7 +132,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
     final prefs = await SharedPreferences.getInstance();
     setState(() {
       favoriteUrls = prefs.getStringList('favorites') ?? [];
-      downloadedUrls = prefs.getStringList('downloads') ?? [];
+      downloadedUrls = prefs.getStringList('history') ?? [];
     });
   }
 
@@ -140,19 +141,20 @@ class _ExploreScreenState extends State<ExploreScreen> {
       return const Icon(Icons.broken_image, color: Colors.white, size: 48);
     }
     // Siempre muestra la PRIMERA imagen de la lista de la categoría
-    return Image.network(
-      images[0],
+    return CachedNetworkImage(
+      imageUrl: images[0],
       fit: BoxFit.cover,
-      errorBuilder: (context, error, stackTrace) {
-        // Si falla, intenta con la siguiente imagen de la lista (de la misma categoría)
-        return images.length > 1
-            ? Image.network(
-                images[1],
-                fit: BoxFit.cover,
-                errorBuilder: (context, error, stackTrace) => const Icon(Icons.broken_image, color: Colors.white, size: 48),
-              )
-            : const Icon(Icons.broken_image, color: Colors.white, size: 48);
-      },
+      fadeInDuration: Duration.zero, // Sin animación de fade
+      placeholder: (context, url) => const SizedBox.shrink(), // No mostrar placeholder
+      errorWidget: (context, url, error) => images.length > 1
+          ? CachedNetworkImage(
+              imageUrl: images[1],
+              fit: BoxFit.cover,
+              fadeInDuration: Duration.zero,
+              placeholder: (context, url) => const SizedBox.shrink(),
+              errorWidget: (context, url, error) => const Icon(Icons.broken_image, color: Colors.white, size: 48),
+            )
+          : const Icon(Icons.broken_image, color: Colors.white, size: 48),
     );
   }
 
@@ -242,53 +244,6 @@ class _ExploreScreenState extends State<ExploreScreen> {
                 ),
               ),
             ],
-          ),
-          DashboardButton(
-            onOpen: () async {
-              await _loadFavoritesAndDownloads();
-              showGeneralDialog(
-                context: context,
-                barrierDismissible: true,
-                barrierLabel: 'Dashboard',
-                transitionDuration: const Duration(milliseconds: 420),
-                pageBuilder: (context, anim1, anim2) => const SizedBox.shrink(),
-                transitionBuilder: (context, anim1, anim2, child) {
-                  final slide = Tween<Offset>(begin: const Offset(-0.5, 0.0), end: const Offset(0.0, 0.0)).animate(CurvedAnimation(parent: anim1, curve: Curves.easeOutExpo));
-                  final fade = CurvedAnimation(parent: anim1, curve: Curves.easeInOut);
-                  return Stack(
-                    children: [
-                      GestureDetector(
-                        onTap: () => Navigator.of(context).pop(),
-                        child: Opacity(
-                          opacity: fade.value * 0.95,
-                          child: BackdropFilter(
-                            filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
-                            child: Container(
-                              color: Colors.transparent,
-                              width: MediaQuery.of(context).size.width,
-                              height: MediaQuery.of(context).size.height,
-                            ),
-                          ),
-                        ),
-                      ),
-                      FadeTransition(
-                        opacity: fade,
-                        child: Transform.translate(
-                          offset: Offset(MediaQuery.of(context).size.width * slide.value.dx, 0),
-                          child: Align(
-                            alignment: Alignment.centerLeft,
-                            child: DashboardPanel(
-                              downloadedUrls: downloadedUrls,
-                              favoriteUrls: favoriteUrls,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
-                  );
-                },
-              );
-            },
           ),
         ],
       ),

@@ -1,17 +1,11 @@
 import 'dart:convert';
-import 'dart:io';
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:fluttertoast/fluttertoast.dart';
-import 'package:media_store_plus/media_store_plus.dart';
-import 'package:wallpaper_manager_flutter/wallpaper_manager_flutter.dart';
 import 'package:http/http.dart' as http;
-import 'package:path_provider/path_provider.dart';
-import 'package:share_plus/share_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../widgets/dashboard_button.dart';
 import '../widgets/dashboard_panel.dart';
-import '../utils/wallpaper_utils.dart';
 import '../utils/wallpaper_info.dart';
 import 'detail_screen.dart';
 
@@ -38,29 +32,11 @@ class _GalleryScreenState extends State<GalleryScreen> {
     'beach',
     'technology',
     'music',
-    'travel',
-    'sports',
-    'fashion',
-    'books',
-    'architecture',
-    'night',
-    'vintage',
-    'minimal',
-    'macro',
-    'patterns',
-    'street',
-    'rain',
-    'fire',
-    'desert',
-    'ocean',
-    'forest',
-    'sunset',
   ];
   late String selectedCategory;
   List<WallpaperInfo> wallpapers = [];
   bool isLoading = false;
   Set<String> favoriteUrls = {};
-  List<String> downloadedUrls = [];
 
   @override
   void initState() {
@@ -70,7 +46,7 @@ class _GalleryScreenState extends State<GalleryScreen> {
       categories.add(selectedCategory);
     }
     fetchWallpapers();
-    loadFavoritesAndDownloads();
+    loadFavorites();
   }
 
   Future<void> fetchWallpapers() async {
@@ -112,6 +88,7 @@ class _GalleryScreenState extends State<GalleryScreen> {
             authorName: img['user']['name'],
             authorUrl: img['user']['links']['html'],
             photoUrl: img['links']['html'],
+            downloadLocation: img['links'] != null ? img['links']['download_location'] : null,
           )).toList();
         });
         if (wallpapers.isEmpty && triedTopic) {
@@ -125,13 +102,13 @@ class _GalleryScreenState extends State<GalleryScreen> {
         await fetchWallpapersFallback();
       } else {
         setState(() { wallpapers = []; });
-        Fluttertoast.showToast(msg: 'Error al cargar imágenes (code: {response.statusCode})');
-        debugPrint('Unsplash error: code={response.statusCode}, body={response.body}');
+        Fluttertoast.showToast(msg: 'Error al cargar imágenes (code: ${response.statusCode})');
+        debugPrint('Unsplash error: code=${response.statusCode}, body=${response.body}');
       }
     } catch (e) {
       setState(() { wallpapers = []; });
-      Fluttertoast.showToast(msg: 'Error de red: {e.toString()}');
-      debugPrint('Network error: {e.toString()}');
+      Fluttertoast.showToast(msg: 'Error de red: ${e.toString()}');
+      debugPrint('Network error: ${e.toString()}');
     }
     setState(() => isLoading = false);
   }
@@ -156,6 +133,7 @@ class _GalleryScreenState extends State<GalleryScreen> {
             authorName: img['user']['name'],
             authorUrl: img['user']['links']['html'],
             photoUrl: img['links']['html'],
+            downloadLocation: img['links'] != null ? img['links']['download_location'] : null,
           )).toList();
         });
         if (wallpapers.isEmpty) {
@@ -173,11 +151,10 @@ class _GalleryScreenState extends State<GalleryScreen> {
     }
   }
 
-  Future<void> loadFavoritesAndDownloads() async {
+  Future<void> loadFavorites() async {
     final prefs = await SharedPreferences.getInstance();
     setState(() {
       favoriteUrls = prefs.getStringList('favorites')?.toSet() ?? {};
-      downloadedUrls = prefs.getStringList('downloads') ?? [];
     });
   }
 
@@ -197,14 +174,23 @@ class _GalleryScreenState extends State<GalleryScreen> {
     return isNowFavorite;
   }
 
-  Future<void> addDownloaded(String url) async {
-    if (!downloadedUrls.contains(url)) {
-      setState(() {
-        downloadedUrls.add(url);
-      });
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setStringList('downloads', downloadedUrls);
-    }
+  Future<void> _openDetailScreen(int initialIndex) async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => DetailScreen(
+          imageUrl: wallpapers[initialIndex].imageUrl,
+          isFavorite: favoriteUrls.contains(wallpapers[initialIndex].imageUrl),
+          authorName: wallpapers[initialIndex].authorName,
+          authorUrl: wallpapers[initialIndex].authorUrl,
+          photoUrl: wallpapers[initialIndex].photoUrl,
+          allWallpapers: wallpapers,
+          initialIndex: initialIndex,
+        ),
+      ),
+    );
+    await loadFavorites();
+    setState(() {});
   }
 
   @override
@@ -215,7 +201,7 @@ class _GalleryScreenState extends State<GalleryScreen> {
         backgroundColor: const Color(0xFF2C2F33),
         title: const Text('Galería de Wallpapers', style: TextStyle(color: Colors.white)),
         elevation: 0,
-        // Eliminado el Dropdown de categorías
+        iconTheme: const IconThemeData(color: Colors.white),
       ),
       body: Stack(
         children: [
@@ -234,74 +220,21 @@ class _GalleryScreenState extends State<GalleryScreen> {
                       itemCount: wallpapers.length,
                       itemBuilder: (context, index) {
                         final wallpaper = wallpapers[index];
-                        final isFavorite = favoriteUrls.contains(wallpaper.imageUrl);
                         return GestureDetector(
                           onTap: () async {
-                            final result = await Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (_) => DetailScreen(
-                                  imageUrl: wallpaper.imageUrl,
-                                  isFavorite: isFavorite,
-                                  authorName: wallpaper.authorName,
-                                  authorUrl: wallpaper.authorUrl,
-                                  photoUrl: wallpaper.photoUrl,
-                                ),
-                              ),
-                            );
-                            if (result == true) {
-                              await loadFavoritesAndDownloads();
-                              setState(() {});
-                            }
+                            _openDetailScreen(index);
                           },
                           child: Hero(
                             tag: wallpaper.imageUrl,
                             child: ClipRRect(
                               borderRadius: BorderRadius.circular(18),
-                              child: Container(
-                                decoration: BoxDecoration(
-                                  color: const Color(0xFF2C2F33),
-                                  boxShadow: [
-                                    BoxShadow(
-                                      color: Colors.black.withOpacity(0.2),
-                                      blurRadius: 8,
-                                      offset: const Offset(0, 4),
-                                    ),
-                                  ],
-                                ),
-                                child: Stack(
-                                  fit: StackFit.expand,
-                                  children: [
-                                    Image.network(
-                                      wallpaper.imageUrl,
-                                      fit: BoxFit.cover,
-                                      loadingBuilder: (context, child, progress) {
-                                        if (progress == null) return child;
-                                        return const Center(child: CircularProgressIndicator(color: Colors.white));
-                                      },
-                                      errorBuilder: (context, error, stackTrace) => const Center(child: Icon(Icons.error, color: Colors.red)),
-                                    ),
-                                    Positioned(
-                                      top: 8,
-                                      right: 8,
-                                      child: GestureDetector(
-                                        onTap: () async {
-                                          await toggleFavorite(wallpaper.imageUrl);
-                                          setState(() {});
-                                        },
-                                        child: Icon(
-                                          favoriteUrls.contains(wallpaper.imageUrl)
-                                              ? Icons.favorite
-                                              : Icons.favorite_border,
-                                          color: favoriteUrls.contains(wallpaper.imageUrl)
-                                              ? Colors.redAccent
-                                              : Colors.white70,
-                                          size: 28,
-                                        ),
-                                      ),
-                                    ),
-                                  ],
-                                ),
+                              child: FadeInImage(
+                                placeholder: const AssetImage('assets/placeholder.jpg'),
+                                image: NetworkImage(wallpaper.imageUrl),
+                                fit: BoxFit.cover,
+                                fadeInDuration: const Duration(milliseconds: 350),
+                                placeholderErrorBuilder: (context, error, stackTrace) => const Center(child: Icon(Icons.image, color: Colors.white38)),
+                                imageErrorBuilder: (context, error, stackTrace) => const Center(child: Icon(Icons.error, color: Colors.red)),
                               ),
                             ),
                           ),
@@ -321,20 +254,6 @@ class _GalleryScreenState extends State<GalleryScreen> {
                 final fade = CurvedAnimation(parent: anim1, curve: Curves.easeInOut);
                 return Stack(
                   children: [
-                    GestureDetector(
-                      onTap: () => Navigator.of(context).pop(),
-                      child: Opacity(
-                        opacity: fade.value * 0.95,
-                        child: BackdropFilter(
-                          filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
-                          child: Container(
-                            color: Colors.transparent,
-                            width: MediaQuery.of(context).size.width,
-                            height: MediaQuery.of(context).size.height,
-                          ),
-                        ),
-                      ),
-                    ),
                     FadeTransition(
                       opacity: fade,
                       child: Transform.translate(
@@ -342,7 +261,6 @@ class _GalleryScreenState extends State<GalleryScreen> {
                         child: Align(
                           alignment: Alignment.centerLeft,
                           child: DashboardPanel(
-                            downloadedUrls: downloadedUrls,
                             favoriteUrls: favoriteUrls.toList(),
                           ),
                         ),
